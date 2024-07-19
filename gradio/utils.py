@@ -43,6 +43,7 @@ from typing import (
     Optional,
     TypeVar,
 )
+from weakref import WeakKeyDictionary
 
 import anyio
 import gradio_client.utils as client_utils
@@ -113,6 +114,8 @@ class BaseReloader(ABC):
         # Copy over the blocks to get new components and events but
         # not a new queue
         demo._queue = self.running_app.blocks._queue
+        demo.pending_diff_streams = self.running_app.blocks.pending_diff_streams
+        demo.pending_streams = self.running_app.blocks.pending_streams
         demo.max_file_size = self.running_app.blocks.max_file_size
         self.running_app.state_holder.reset(demo)
         self.running_app.blocks = demo
@@ -155,6 +158,7 @@ class SourceFileReloader(BaseReloader):
         super().swap_blocks(demo)
         if old_blocks:
             reassign_keys(old_blocks, demo)
+            reassign_fns(old_blocks, demo)
         demo.config = demo.get_config_file()
         self.alert_change("reload")
 
@@ -249,46 +253,51 @@ def watchfn(reloader: SourceFileReloader):
     # Need to import the module in this thread so that the
     # module is available in the namespace of this thread
     module = importlib.import_module(reloader.watch_module_name)
+    lock = reloader.app.blocks._queue.reload_lock
     while reloader.should_watch():
         changed = get_changes()
         if changed:
             print(f"Changes detected in: {changed}")
+            lock.acquire()
             try:
-                # How source file reloading works
-                # 1. Remove the gr.no_reload code blocks from the temp file
-                # 2. Execute the changed source code in the original module's namespac
-                # 3. Delete the package the module is in from sys.modules.
-                # This is so that the updated module is available in the entire package
-                # 4. Do 1-2 for the main demo file even if it did not change.
-                # This is because the main demo file may import the changed file and we need the
-                # changes to be reflected in the main demo file.
+                try:
+                    # How source file reloading works
+                    # 1. Remove the gr.no_reload code blocks from the temp file
+                    # 2. Execute the changed source code in the original module's namespac
+                    # 3. Delete the package the module is in from sys.modules.
+                    # This is so that the updated module is available in the entire package
+                    # 4. Do 1-2 for the main demo file even if it did not change.
+                    # This is because the main demo file may import the changed file and we need the
+                    # changes to be reflected in the main demo file.
 
-                if changed.suffix == ".py":
-                    changed_in_copy = _remove_no_reload_codeblocks(str(changed))
-                    if changed != reloader.demo_file:
-                        changed_module = _find_module(changed)
-                        exec(changed_in_copy, changed_module.__dict__)
-                        top_level_parent = sys.modules[
-                            changed_module.__name__.split(".")[0]
-                        ]
-                        if top_level_parent != changed_module:
-                            importlib.reload(top_level_parent)
+                    if changed.suffix == ".py":
+                        changed_in_copy = _remove_no_reload_codeblocks(str(changed))
+                        if changed != reloader.demo_file:
+                            changed_module = _find_module(changed)
+                            exec(changed_in_copy, changed_module.__dict__)
+                            top_level_parent = sys.modules[
+                                changed_module.__name__.split(".")[0]
+                            ]
+                            if top_level_parent != changed_module:
+                                importlib.reload(top_level_parent)
 
-                changed_demo_file = _remove_no_reload_codeblocks(
-                    str(reloader.demo_file)
-                )
-                exec(changed_demo_file, module.__dict__)
-            except Exception:
-                print(
-                    f"Reloading {reloader.watch_module_name} failed with the following exception: "
-                )
-                traceback.print_exc()
-                mtimes = {}
-                reloader.alert_change("error")
-                reloader.app.reload_error_message = traceback.format_exc()
-                continue
-            demo = getattr(module, reloader.demo_name)
-            reloader.swap_blocks(demo)
+                    changed_demo_file = _remove_no_reload_codeblocks(
+                        str(reloader.demo_file)
+                    )
+                    exec(changed_demo_file, module.__dict__)
+                except Exception:
+                    print(
+                        f"Reloading {reloader.watch_module_name} failed with the following exception: "
+                    )
+                    traceback.print_exc()
+                    mtimes = {}
+                    reloader.alert_change("error")
+                    reloader.app.reload_error_message = traceback.format_exc()
+                    continue
+                demo = getattr(module, reloader.demo_name)
+                reloader.swap_blocks(demo)
+            finally:
+                lock.release()
             mtimes = {}
         time.sleep(0.05)
 
@@ -355,6 +364,50 @@ def reassign_keys(old_blocks: Blocks, new_blocks: Blocks):
                     reassign_context_keys(None, new_block)
 
     reassign_context_keys(old_blocks, new_blocks)
+
+
+def reassign_fns(old_blocks: Blocks, new_blocks: Blocks):
+    new_component_map = {
+        component.key: component
+        for component in new_blocks.blocks.values()
+        if component.key is not None
+    }
+    old_component_map = {
+        component.key: component
+        for component in old_blocks.blocks.values()
+        if component.key is not None
+    }
+
+    new_fn_by_api_name = {
+        fn.api_name: fn
+        for fn in new_blocks.fns.values()
+        if fn.api_name
+    }
+
+    # weakly map old fns to new fns
+    old_fns_mapping = WeakKeyDictionary()
+    for fn in old_blocks.fns.values():
+        # map by api_name
+        if fn.api_name in new_fn_by_api_name:
+            old_fns_mapping[fn] = new_fn_by_api_name[fn.api_name]
+        # remap fn outputs
+        for i, old_output in enumerate(fn.outputs[:]):
+            if old_output.key not in new_component_map:
+                continue
+            new_output = new_component_map[old_output.key]
+            print(f'{old_output._id} -> {new_output._id}')
+            fn.outputs[i] = new_output  # type: ignore
+    new_blocks.default_config.old_fns_mapping = old_fns_mapping
+
+    # weakly map old blocks to new blocks
+    old_blocks_mapping = WeakKeyDictionary()
+    for key, old_component in old_component_map.items():
+        if key in new_component_map:
+            old_blocks_mapping[old_component] = new_component_map[key]
+    for older_component, old_component in old_blocks.default_config.old_blocks_mapping.items():
+        if old_component in old_blocks_mapping:
+            old_blocks_mapping[older_component] = old_blocks_mapping[old_component]
+    new_blocks.default_config.old_blocks_mapping = old_blocks_mapping
 
 
 def colab_check() -> bool:
