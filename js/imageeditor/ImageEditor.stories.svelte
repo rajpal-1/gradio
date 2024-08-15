@@ -214,8 +214,10 @@
 			orig_name: "cheetah.jpg"
 		},
 		type: "pil",
+		placeholder: "Upload an image of a cat",
 		sources: ["upload", "webcam"],
 		interactive: "true",
+		placeholder: "Upload an image of a cat",
 		brush: {
 			default_size: "auto",
 			colors: ["#ff0000", "#00ff00", "#0000ff"],

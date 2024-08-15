@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { I18nFormatter } from "@gradio/utils";
 	import { Upload as UploadIcon, ImagePaste } from "@gradio/icons";
+	import { marked } from "marked";
+
 	export let type:
 		| "video"
 		| "image"
@@ -13,6 +15,11 @@
 	export let message: string | undefined = undefined;
 	export let mode: "full" | "short" = "full";
 	export let hovered = false;
+	export let placeholder: string | undefined = undefined;
+
+	function render_markdown(text: string): string {
+		return marked(text);
+	}
 
 	const defs = {
 		image: "upload_text.drop_image",
@@ -34,11 +41,15 @@
 		{/if}
 	</span>
 
-	{i18n(defs[type] || defs.file)}
+	{#if placeholder}
+		{@html render_markdown(placeholder)}
+	{:else}
+		{i18n(defs[type] || defs.file)}
 
-	{#if mode !== "short"}
-		<span class="or">- {i18n("common.or")} -</span>
-		{message || i18n("upload_text.click_to_upload")}
+		{#if mode !== "short"}
+			<span class="or">- {i18n("common.or")} -</span>
+			{message || i18n("upload_text.click_to_upload")}
+		{/if}
 	{/if}
 </div>
 
@@ -53,6 +64,7 @@
 		line-height: var(--line-md);
 		height: 100%;
 		padding-top: var(--size-3);
+		text-align: center;
 	}
 
 	.or {
