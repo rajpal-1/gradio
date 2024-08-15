@@ -10,13 +10,7 @@
 	import type { I18nFormatter } from "js/core/src/gradio_helper";
 	import { type Client } from "@gradio/client";
 	import VirtualTable from "./VirtualTable.svelte";
-	import type {
-		Headers,
-		HeadersWithIDs,
-		Data,
-		Metadata,
-		Datatype
-	} from "./utils";
+	import type { Headers, HeadersWithIDs, Metadata, Datatype } from "./utils";
 
 	export let datatype: Datatype | Datatype[];
 	export let label: string | null = null;
@@ -46,6 +40,7 @@
 	export let display_value: string[][] | null = null;
 	export let styling: string[][] | null = null;
 	let t_rect: DOMRectReadOnly;
+	let original_indices: number[][] = [];
 
 	const dispatch = createEventDispatcher<{
 		change: {
@@ -65,7 +60,13 @@
 		if (selected !== false) {
 			const [row, col] = selected;
 			if (!isNaN(row) && !isNaN(col)) {
-				dispatch("select", { index: [row, col], value: get_data_at(row, col) });
+				const original_row =
+					original_indices.find(([_, current]) => current === row)?.[0] ?? row;
+				dispatch("select", {
+					index: [row, col],
+					original_index: [original_row, col],
+					value: get_data_at(row, col)
+				});
 			}
 		}
 	}
@@ -590,6 +591,7 @@
 		} else {
 			return;
 		}
+		original_indices = indices.map((_, i) => [indices[i], i]);
 
 		// sort all the data and metadata based on the values in the data
 		const temp_data = [..._data];
