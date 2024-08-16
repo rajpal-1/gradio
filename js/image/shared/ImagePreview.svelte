@@ -99,7 +99,7 @@
 			{/if}
 		</div>
 		<button on:click={handle_click}>
-			<div class:selectable>
+			<div class:selectable class="wrapper">
 				<Image src={value.url} alt="" loading="lazy" on:load />
 			</div>
 		</button>
@@ -115,13 +115,18 @@
 	button {
 		width: var(--size-full);
 		height: var(--size-full);
-		object-fit: contain;
+		object-fit: scale-down;
 		display: block;
 		border-radius: var(--radius-lg);
 
 		display: flex;
 		align-items: center;
 		justify-content: center;
+	}
+
+	.wrapper {
+		width: var(--size-full);
+		height: var(--size-full);
 	}
 
 	.selectable {
@@ -152,6 +157,6 @@
 	:global(.image-container:fullscreen img) {
 		max-width: 90vw;
 		max-height: 90vh;
-		object-fit: contain;
+		object-fit: scale-down;
 	}
 </style>
