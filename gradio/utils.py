@@ -119,6 +119,7 @@ class BaseReloader(ABC):
         # not a new queue
         demo._queue = self.running_app.blocks._queue
         demo.max_file_size = self.running_app.blocks.max_file_size
+        demo.is_running = True
         self.running_app.state_holder.reset(demo)
         self.running_app.blocks = demo
 
@@ -1487,3 +1488,36 @@ def safe_join(directory: DeveloperPath, path: UserProvidedPath) -> str:
         raise InvalidPathError()
 
     return fullpath
+
+
+def is_allowed_file(
+    path: Path,
+    blocked_paths: Sequence[str | Path],
+    allowed_paths: Sequence[str | Path],
+    file_sets: Sequence[set[Path]],
+) -> tuple[
+    bool, Literal["in_blocklist", "allowed", "not_created_or_allowed", "created_by_app"]
+]:
+    in_blocklist = any(
+        is_in_or_equal(path, blocked_path) for blocked_path in blocked_paths
+    )
+    if in_blocklist:
+        return False, "in_blocklist"
+
+    in_allowedlist = any(
+        is_in_or_equal(path, allowed_path) for allowed_path in allowed_paths
+    )
+
+    if in_allowedlist:
+        return True, "allowed"
+
+    created_by_app = False
+    for temp_file_set in file_sets:
+        if path in temp_file_set:
+            created_by_app = True
+            break
+
+    return (
+        created_by_app,
+        "created_by_app" if created_by_app else "not_created_or_allowed",
+    )
