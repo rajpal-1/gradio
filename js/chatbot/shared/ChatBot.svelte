@@ -17,7 +17,7 @@
 
 	import { Clear } from "@gradio/icons";
 	import type { SelectData, LikeData } from "@gradio/utils";
-	import type { MessageRole } from "../types";
+	import type { MessageRole, ExampleMessage } from "../types";
 	import { MarkdownCode as Markdown } from "@gradio/markdown";
 	import type { FileData, Client } from "@gradio/client";
 	import type { I18nFormatter } from "js/core/src/gradio_helper";
@@ -96,6 +96,7 @@
 	export let placeholder: string | null = null;
 	export let upload: Client["upload"];
 	export let msg_format: "tuples" | "messages" = "tuples";
+	export let examples: ExampleMessage[] | null = null;
 
 	let target = document.querySelector("div.gradio-container");
 
@@ -434,11 +435,61 @@
 			<center>
 				<Markdown message={placeholder} {latex_delimiters} />
 			</center>
+			<div class="examples">
+				{#if examples !== null}
+					{#each examples as example}
+						<div class="example">
+							<span class="example-text">{example.text}</span>
+							{#if example.file !== undefined && typeof example.file === "object" && example.file.mime_type?.includes("image")}
+								<Image
+									class="example-image"
+									src={example.file.url}
+									alt="example-secondary"
+								/>
+							{:else if example.file !== undefined}
+								<span class="example-file"><em>{example.file.orig_name}</em></span>
+							{/if}
+						</div>
+					{/each}
+				{/if}
+			</div>
 		{/if}
 	</div>
 </div>
 
 <style>
+	.examples {
+        padding-top: 200px;
+		margin-bottom: -200px;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+    }
+    .example {
+        display: flex;
+		flex-direction: column;
+        align-items: center;
+        margin: 5px;
+        padding: 10px 15px;
+        border: 1px solid #444;
+        border-radius: 15px;
+        background-color: #333;
+        cursor: pointer;
+        transition: background-color 0.3s;
+    }
+    .example:hover {
+        background-color: #444;
+    }
+    .example-text {
+        margin-right: 10px;
+    }
+	.example-image {
+        max-height: 100px;
+		max-width: 100px;
+		object-fit: cover;
+		border-radius: 50%;
+    }
+
 	.placeholder-container {
 		display: flex;
 		justify-content: center;
